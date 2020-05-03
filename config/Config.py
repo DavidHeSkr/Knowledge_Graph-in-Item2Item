@@ -1,11 +1,15 @@
 #coding:utf-8
 import numpy as np
+import pandas as pd
+#import tensorflow as tf
 import tensorflow as tf
 import os
 import time
 import datetime
 import ctypes
 import json
+import random
+#tf.enable_eager_execution()
 
 class Config(object):
 	'''
@@ -13,16 +17,6 @@ class Config(object):
 	'''
 	def __init__(self):
 		base_file = os.path.abspath(os.path.join(os.path.dirname(__file__), '../release/Base.so'))
-		self.lib = ctypes.cdll.LoadLibrary(base_file)
-		self.lib.sampling.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64, ctypes.c_int64, ctypes.c_int64]
-		self.lib.getHeadBatch.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
-		self.lib.getTailBatch.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
-		self.lib.testHead.argtypes = [ctypes.c_void_p]
-		self.lib.testTail.argtypes = [ctypes.c_void_p]
-		self.lib.getTestBatch.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
-		self.lib.getValidBatch.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
-		self.lib.getBestThreshold.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
-		self.lib.test_triple_classification.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
 		self.test_flag = False
 		self.in_path = None
 		self.out_path = None
@@ -48,85 +42,78 @@ class Config(object):
 		self.test_triple_classification = False
 		self.early_stopping = None # It expects a tuple of the following: (patience, min_delta)
 
-	def init_link_prediction(self):
-		r'''
-		import essential files and set essential interfaces for link prediction
-		'''
-		self.lib.importTestFiles()
-		self.lib.importTypeFiles()
-		self.test_h = np.zeros(self.lib.getEntityTotal(), dtype = np.int64)
-		self.test_t = np.zeros(self.lib.getEntityTotal(), dtype = np.int64)
-		self.test_r = np.zeros(self.lib.getEntityTotal(), dtype = np.int64)
-		self.test_h_addr = self.test_h.__array_interface__['data'][0]
-		self.test_t_addr = self.test_t.__array_interface__['data'][0]
-		self.test_r_addr = self.test_r.__array_interface__['data'][0]
+		self.rel2movie = None
+		self.rel2ids = None
+		self.movie2rels = None
+		self.entTotal = None
+		self.relTotal = None
 
-	def init_triple_classification(self):
-		r'''
-		import essential files and set essential interfaces for triple classification
-		'''
-		self.lib.importTestFiles()
-		self.lib.importTypeFiles()
+		self.sample_node_neighbour = None
+		self.sample_node_number = None
 
-		self.test_pos_h = np.zeros(self.lib.getTestTotal(), dtype = np.int64)
-		self.test_pos_t = np.zeros(self.lib.getTestTotal(), dtype = np.int64)
-		self.test_pos_r = np.zeros(self.lib.getTestTotal(), dtype = np.int64)
-		self.test_neg_h = np.zeros(self.lib.getTestTotal(), dtype = np.int64)
-		self.test_neg_t = np.zeros(self.lib.getTestTotal(), dtype = np.int64)
-		self.test_neg_r = np.zeros(self.lib.getTestTotal(), dtype = np.int64)
-		self.test_pos_h_addr = self.test_pos_h.__array_interface__['data'][0]
-		self.test_pos_t_addr = self.test_pos_t.__array_interface__['data'][0]
-		self.test_pos_r_addr = self.test_pos_r.__array_interface__['data'][0]
-		self.test_neg_h_addr = self.test_neg_h.__array_interface__['data'][0]
-		self.test_neg_t_addr = self.test_neg_t.__array_interface__['data'][0]
-		self.test_neg_r_addr = self.test_neg_r.__array_interface__['data'][0]
-
-		self.valid_pos_h = np.zeros(self.lib.getValidTotal(), dtype = np.int64)
-		self.valid_pos_t = np.zeros(self.lib.getValidTotal(), dtype = np.int64)
-		self.valid_pos_r = np.zeros(self.lib.getValidTotal(), dtype = np.int64)
-		self.valid_neg_h = np.zeros(self.lib.getValidTotal(), dtype = np.int64)
-		self.valid_neg_t = np.zeros(self.lib.getValidTotal(), dtype = np.int64)
-		self.valid_neg_r = np.zeros(self.lib.getValidTotal(), dtype = np.int64)
-		self.valid_pos_h_addr = self.valid_pos_h.__array_interface__['data'][0]
-		self.valid_pos_t_addr = self.valid_pos_t.__array_interface__['data'][0]
-		self.valid_pos_r_addr = self.valid_pos_r.__array_interface__['data'][0]
-		self.valid_neg_h_addr = self.valid_neg_h.__array_interface__['data'][0]
-		self.valid_neg_t_addr = self.valid_neg_t.__array_interface__['data'][0]
-		self.valid_neg_r_addr = self.valid_neg_r.__array_interface__['data'][0]
-		self.relThresh = np.zeros(self.lib.getRelationTotal(), dtype = np.float32)
-		self.relThresh_addr = self.relThresh.__array_interface__['data'][0]
+		self.max_rel = 20
+		self.rel_type = 2
 
 	# prepare for train and test
 	def init(self):
 		self.trainModel = None
-		if self.in_path != None:
-			self.lib.setInPath(ctypes.create_string_buffer(self.in_path.encode(), len(self.in_path) * 2))
-			self.lib.setBern(self.bern)
-			self.lib.setWorkThreads(self.workThreads)
-			self.lib.randReset()
-			self.lib.importTrainFiles()
-			self.relTotal = self.lib.getRelationTotal()
-			self.entTotal = self.lib.getEntityTotal()
-			self.trainTotal = self.lib.getTrainTotal()
-			self.testTotal = self.lib.getTestTotal()
-			self.validTotal = self.lib.getValidTotal()
-			self.batch_size = int(self.lib.getTrainTotal() / self.nbatches)
-			self.batch_seq_size = self.batch_size * (1 + self.negative_ent + self.negative_rel)
-			self.batch_h = np.zeros(self.batch_size * (1 + self.negative_ent + self.negative_rel), dtype = np.int64)
-			self.batch_t = np.zeros(self.batch_size * (1 + self.negative_ent + self.negative_rel), dtype = np.int64)
-			self.batch_r = np.zeros(self.batch_size * (1 + self.negative_ent + self.negative_rel), dtype = np.int64)
-			self.batch_y = np.zeros(self.batch_size * (1 + self.negative_ent + self.negative_rel), dtype = np.float32)
-			self.batch_h_addr = self.batch_h.__array_interface__['data'][0]
-			self.batch_t_addr = self.batch_t.__array_interface__['data'][0]
-			self.batch_r_addr = self.batch_r.__array_interface__['data'][0]
-			self.batch_y_addr = self.batch_y.__array_interface__['data'][0]
+		#if self.in_path != None:
+		self.read_files_()
+		self.batch_size = self.sample_node_number * self.sample_node_neighbour * 2
+		self.batch_seq_size = self.batch_size * (1 + self.negative_ent + self.negative_rel)
+		#print("self.batch_size", self.batch_size)
+		#print("self.batch_seq_size", self.batch_seq_size)
+		self.batch_h = np.zeros(self.batch_size * (1 + self.negative_ent + self.negative_rel), dtype = np.int64)
+		self.batch_t = np.zeros(self.batch_size * (1 + self.negative_ent + self.negative_rel), dtype = np.int64)
+		self.batch_r = np.zeros(self.batch_size * (1 + self.negative_ent + self.negative_rel), dtype = np.int64)
+		self.batch_type_r = np.zeros(self.batch_size * (1 + self.negative_ent + self.negative_rel), dtype = np.int64)
+		self.batch_y = np.zeros(self.batch_size * (1 + self.negative_ent + self.negative_rel), dtype = np.float32)
 		if self.test_link_prediction:
 			self.init_link_prediction()
 		if self.test_triple_classification:
 			self.init_triple_classification()
 
+	def read_files_(self):
+		with open('rel2movies.json') as jsonfile:
+			self.rel2movie = json.load(jsonfile)
+		with open('rel2ids.json') as jsonfile:
+			self.rel2ids = json.load(jsonfile)
+		self.movie2rels = pd.read_csv("movie2rels.csv")
+
+		with open('new_u2m.json') as jsonfile:
+			rel2movie = json.load(jsonfile)
+		rel2movie_ = {}
+		for i in rel2movie:
+			if i not in rel2movie_:
+				rel2movie_[int(i)] = []
+			for j in rel2movie[i]:
+				rel2movie_[int(i)].append(int(j))
+		self.u2m = rel2movie_
+
+		with open('new_m2u.json') as jsonfile:
+			movie2rel = json.load(jsonfile)
+		movie2rel_ = {}
+		for m in movie2rel:
+			if m not in movie2rel_:
+				movie2rel_[int(m)] = []
+			for n in movie2rel[m]:
+				movie2rel_[int(m)].append(int(n))
+		self.m2u = movie2rel_
+
+		self.entTotal = np.max([i for i in self.m2u]) + 1
+		self.relTotal = np.max([i for i in self.u2m]) + len(self.rel2ids) + 1
+
 	def get_ent_total(self):
 		return self.entTotal
+
+	def set_sample_node_neighbour(self, sample_node_neighbour):
+		self.sample_node_neighbour = sample_node_neighbour
+
+	def set_rel_type(self, rel_type):
+		self.rel_type = rel_type
+
+	def get_rel_type(self):
+		return self.rel_type
 
 	def get_rel_total(self):
 		return self.relTotal
@@ -175,8 +162,8 @@ class Config(object):
 	def set_train_times(self, times):
 		self.train_times = times
 
-	def set_nbatches(self, nbatches):
-		self.nbatches = nbatches
+	def set_sample_node_number(self, sample_node_number):
+		self.sample_node_number = sample_node_number
 
 	def set_margin(self, margin):
 		self.margin = margin
@@ -203,21 +190,154 @@ class Config(object):
 	def set_early_stopping(self, early_stopping):
 		self.early_stopping = early_stopping
 
+	def sample_data(self, M_IDs):
+		total_triples = []
+		for M_ID in M_IDs:
+			total_movies = set(self.movie2rels.MovieID)
+			movie = self.movie2rels.iloc[M_ID]
+			posi_tails = []
+			nega_tails = []
+			total_used = 0
+			movie.Genres = eval(movie.Genres)
+			gen_num = len(movie.Genres)
+			for index,label in enumerate(movie.Genres):
+				if index == gen_num - 1:
+					lab_number = self.sample_node_neighbour - total_used
+				else:
+					#percent = movie.Genres[label]
+					percent = 1/len(movie.Genres)
+					lab_number = int(percent * self.sample_node_neighbour)
+				total_used += lab_number
+				total_label_movies = self.rel2movie[label]
+				positive_tails = random.choices(total_label_movies, k = lab_number)
+				total_other_movies = total_movies.difference(set(total_label_movies))
+				negative_tails = random.sample(total_other_movies, lab_number * self.negative_ent)
+				for posi in positive_tails:
+					posi_tails.append([M_ID, posi, label])
+				for nega in negative_tails:
+					nega_tails.append([M_ID, nega, label])
+			total_triples.append([[posi_tails, nega_tails]])
+		return total_triples
+
+	def process_smapling_(self, max_rel, max_neigh, sampled_num, negative_ent):
+	    movies = random.choices(list(self.m2u.keys()), k = sampled_num)
+	    total_triples = []
+	    for movie in movies:
+	        total_movies = set(list(self.m2u.keys()))
+	        pos_triples = []
+	        neg_triples = []
+	        rels = self.m2u[movie]
+	        #print(rels)
+	        if len(rels) > max_rel:
+	            selected_rels = random.choices(rels, k = max_rel)
+	        else:
+	            selected_rels = rels
+	        len_rel = len(selected_rels)
+	        total_ = 0
+	        percent = 1/len_rel
+	        for index,rel in enumerate(selected_rels):
+	            sampled = self.u2m[rel]
+	            if index != len_rel - 1:
+	                sampled_nei = int(percent * max_neigh)
+	                total_ += sampled_nei
+	                pos_tails = random.choices(sampled, k = sampled_nei)
+	            else:
+	                sampled_nei = max_neigh - total_
+	                pos_tails = random.choices(sampled, k = sampled_nei)
+	            total_other_movies = total_movies.difference(set(sampled))
+	            negative_tails = random.sample(total_other_movies, sampled_nei * negative_ent)
+	            #print("len", len(negative_tails))
+	            for pos_tail in pos_tails:
+	                pos_triples.append([movie, pos_tail, rel])
+	            for neg_tail in negative_tails:
+	                neg_triples.append([movie, neg_tail, rel])
+	        total_triples.append([pos_triples, neg_triples])
+	    return total_triples
 	# call C function for sampling
 	def sampling(self):
-		self.lib.sampling(self.batch_h_addr, self.batch_t_addr, self.batch_r_addr, self.batch_y_addr, self.batch_size, self.negative_ent, self.negative_rel)
+		#print(self.sample_node_number)
+		sampled_nodes = random.choices(range(self.entTotal), k = self.sample_node_number)
+		pos_neg_list = self.sample_data(sampled_nodes)
+
+		for r in pos_neg_list:
+			for i in r:
+				for j in i:
+					for q in j:
+						#print("self.rel2ids", self.rel2ids)
+						#print("j[2]", q[2])
+						q[2] = self.rel2ids[q[2]]
+
+		pos_neg_list_2 = self.process_smapling_(self.max_rel, self.sample_node_neighbour, self.sample_node_number, self.negative_ent)
+
+		head_pos = []
+		head_neg = []
+		tail_pos = []
+		tail_neg = []
+		relation_pos = []
+		rel_type_pos = []
+		relation_neg = []
+		rel_type_neg = []
+		y_pos = []
+		y_neg = []
+
+		for elem in pos_neg_list_2:
+			pos_triples = elem[0]
+			neg_triples = elem[1]
+			for pos in pos_triples:
+				head_pos.append(pos[0])
+				tail_pos.append(pos[1])
+				relation_pos.append(pos[2])
+				rel_type_pos.append(0)
+				y_pos.append(1)
+			#print(len(neg_triples))
+			for neg in neg_triples:
+				#print("len(neg)",len(neg))
+				head_neg.append(neg[0])
+				tail_neg.append(neg[1])
+				relation_neg.append(neg[2])
+				rel_type_neg.append(0)
+				y_neg.append(-1)
+
+		for elem in pos_neg_list:
+			pos_triples = elem[0][0]
+			neg_triples = elem[0][1]
+			for pos in pos_triples:
+				head_pos.append(pos[0])
+				tail_pos.append(pos[1])
+				relation_pos.append(pos[2])
+				rel_type_pos.append(1)
+				y_pos.append(1)
+			for neg in neg_triples:
+				head_neg.append(neg[0])
+				tail_neg.append(neg[1])
+				relation_neg.append(neg[2])
+				rel_type_neg.append(1)
+				y_neg.append(-1)
+
+		head_pos = head_pos + head_neg
+		tail_pos = tail_pos + tail_neg
+		relation_pos = relation_pos + relation_neg
+		rel_type_pos = rel_type_pos + rel_type_neg
+		y_pos = y_pos + y_neg
+
+		self.batch_h = np.array(head_pos, dtype = np.int64)
+		self.batch_r = np.array(relation_pos, dtype = np.int64)
+		self.batch_type_r = np.array(rel_type_pos, dtype = np.int64)
+		self.batch_t = np.array(tail_pos, dtype = np.int64)
+		self.batch_y = np.array(y_pos, dtype = np.float32)
+		#self.lib.sampling(self.batch_h_addr, self.batch_t_addr, self.batch_r_addr, self.batch_y_addr, self.batch_size, self.negative_ent, self.negative_rel)
 
 	# save model
 	def save_tensorflow(self):
 		with self.graph.as_default():
 			with self.sess.as_default():
 				self.saver.save(self.sess, self.exportName)
+
 	# restore model
 	def restore_tensorflow(self):
 		with self.graph.as_default():
 			with self.sess.as_default():
 				self.saver.restore(self.sess, self.importName)
-
 
 	def export_variables(self, path = None):
 		with self.graph.as_default():
@@ -297,14 +417,26 @@ class Config(object):
 				self.saver = tf.train.Saver()
 				self.sess.run(tf.global_variables_initializer())
 
-	def train_step(self, batch_h, batch_t, batch_r, batch_y):
+	def train_step(self, batch_h, batch_t, batch_r, batch_type_r, batch_y):
 		feed_dict = {
 			self.trainModel.batch_h: batch_h,
 			self.trainModel.batch_t: batch_t,
 			self.trainModel.batch_r: batch_r,
-			self.trainModel.batch_y: batch_y
+			self.trainModel.batch_y: batch_y,
+			self.trainModel.batch_type_r: batch_type_r
 		}
 		_, loss = self.sess.run([self.train_op, self.trainModel.loss], feed_dict)
+		"""
+		print("_p_score", _p_score)
+		print("p_score", p_score)
+		print("_n_score", _n_score)
+		print("n_score", n_score)
+		print("n_t", n_t)
+		print("p_t", p_t)
+		print("p_t - n_t", p_t - n_t)
+		print("p_score - n_score", p_score - n_score)
+		"""
+		#print("p_type_r", p_type_r)
 		return loss
 
 	def test_step(self, test_h, test_t, test_r):
@@ -330,7 +462,8 @@ class Config(object):
 					t_init = time.time()
 					for batch in range(self.nbatches):
 						self.sampling()
-						loss += self.train_step(self.batch_h, self.batch_t, self.batch_r, self.batch_y)
+						loss_ = self.train_step(self.batch_h, self.batch_t, self.batch_r, self.batch_type_r, self.batch_y)
+						loss += loss_
 					t_end = time.time()
 					if self.log_on:
 						print('Epoch: {}, loss: {}, time: {}'.format(times, loss, (t_end - t_init)))
@@ -349,124 +482,3 @@ class Config(object):
 					self.save_tensorflow()
 				if self.out_path != None:
 					self.save_parameters(self.out_path)
-
-	def test(self):
-		with self.graph.as_default():
-			with self.sess.as_default():
-				if self.importName != None:
-					self.restore_tensorflow()
-				if self.test_link_prediction:
-					total = self.lib.getTestTotal()
-					for times in range(total):
-						self.lib.getHeadBatch(self.test_h_addr, self.test_t_addr, self.test_r_addr)
-						res = self.test_step(self.test_h, self.test_t, self.test_r)
-						self.lib.testHead(res.__array_interface__['data'][0])
-
-						self.lib.getTailBatch(self.test_h_addr, self.test_t_addr, self.test_r_addr)
-						res = self.test_step(self.test_h, self.test_t, self.test_r)
-						self.lib.testTail(res.__array_interface__['data'][0])
-						if self.log_on:
-							print(times)
-					self.lib.test_link_prediction()
-				if self.test_triple_classification:
-					self.lib.getValidBatch(self.valid_pos_h_addr, self.valid_pos_t_addr, self.valid_pos_r_addr, self.valid_neg_h_addr, self.valid_neg_t_addr, self.valid_neg_r_addr)
-					res_pos = self.test_step(self.valid_pos_h, self.valid_pos_t, self.valid_pos_r)
-					res_neg = self.test_step(self.valid_neg_h, self.valid_neg_t, self.valid_neg_r)
-					self.lib.getBestThreshold(self.relThresh_addr, res_pos.__array_interface__['data'][0], res_neg.__array_interface__['data'][0])
-
-					self.lib.getTestBatch(self.test_pos_h_addr, self.test_pos_t_addr, self.test_pos_r_addr, self.test_neg_h_addr, self.test_neg_t_addr, self.test_neg_r_addr)
-
-					res_pos = self.test_step(self.test_pos_h, self.test_pos_t, self.test_pos_r)
-					res_neg = self.test_step(self.test_neg_h, self.test_neg_t, self.test_neg_r)
-					self.lib.test_triple_classification(self.relThresh_addr, res_pos.__array_interface__['data'][0], res_neg.__array_interface__['data'][0])
-
-	def predict_head_entity(self, t, r, k):
-		r'''This mothod predicts the top k head entities given tail entity and relation.
-		
-		Args: 
-			t (int): tail entity id
-			r (int): relation id
-			k (int): top k head entities
-		
-		Returns:
-			list: k possible head entity ids 	  	
-		'''
-		self.init_link_prediction()
-		if self.importName != None:
-			self.restore_tensorflow()
-		test_h = np.array(range(self.entTotal))
-		test_r = np.array([r] * self.entTotal)
-		test_t = np.array([t] * self.entTotal)
-		res = self.test_step(test_h, test_t, test_r).reshape(-1).argsort()[:k]
-		print(res)
-		return res
-
-	def predict_tail_entity(self, h, r, k):
-		r'''This mothod predicts the top k tail entities given head entity and relation.
-		
-		Args: 
-			h (int): head entity id
-			r (int): relation id
-			k (int): top k tail entities
-		
-		Returns:
-			list: k possible tail entity ids 	  	
-		'''
-		self.init_link_prediction()
-		if self.importName != None:
-			self.restore_tensorflow()
-		test_h = np.array([h] * self.entTotal)
-		test_r = np.array([r] * self.entTotal)
-		test_t = np.array(range(self.entTotal))
-		res = self.test_step(test_h, test_t, test_r).reshape(-1).argsort()[:k]
-		print(res)
-		return res
-
-	def predict_relation(self, h, t, k):
-		r'''This methods predict the relation id given head entity and tail entity.
-		
-		Args:
-			h (int): head entity id
-			t (int): tail entity id
-			k (int): top k relations
-		
-		Returns:
-			list: k possible relation ids
-		'''
-		self.init_link_prediction()
-		if self.importName != None:
-			self.restore_tensorflow()
-		test_h = np.array([h] * self.relTotal)
-		test_r = np.array(range(self.relTotal))
-		test_t = np.array([t] * self.relTotal)
-		res = self.test_step(test_h, test_t, test_r).reshape(-1).argsort()[:k]
-		print(res)
-		return res
-
-	def predict_triple(self, h, t, r, thresh = None):
-		r'''This method tells you whether the given triple (h, t, r) is correct of wrong
-	
-		Args:
-			h (int): head entity id
-			t (int): tail entity id
-			r (int): relation id
-			thresh (fload): threshold for the triple
-		'''
-		self.init_triple_classification()
-		if self.importName != None:
-			self.restore_tensorflow()
-		res = self.test_step(np.array([h]), np.array([t]), np.array([r]))
-		if thresh != None:
-			if res < thresh:
-				print("triple (%d,%d,%d) is correct" % (h, t, r))
-			else:
-				print("triple (%d,%d,%d) is wrong" % (h, t, r))
-			return
-		self.lib.getValidBatch(self.valid_pos_h_addr, self.valid_pos_t_addr, self.valid_pos_r_addr, self.valid_neg_h_addr, self.valid_neg_t_addr, self.valid_neg_r_addr)
-		res_pos = self.test_step(self.valid_pos_h, self.valid_pos_t, self.valid_pos_r)
-		res_neg = self.test_step(self.valid_neg_h, self.valid_neg_t, self.valid_neg_r)
-		self.lib.getBestThreshold(self.relThresh_addr, res_pos.__array_interface__['data'][0], res_neg.__array_interface__['data'][0])
-		if res < self.relThresh[r]:
-			print("triple (%d,%d,%d) is correct" % (h, t, r))
-		else:
-			print("triple (%d,%d,%d) is wrong" % (h, t, r))

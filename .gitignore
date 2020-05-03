@@ -5,6 +5,8 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+mypython
+res/*
 build/
 develop-eggs/
 dist/

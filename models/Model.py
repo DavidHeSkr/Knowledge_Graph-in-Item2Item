@@ -9,7 +9,7 @@ class Model(object):
 
 	def get_positive_instance(self, in_batch = True):
 		if in_batch:
-			return [self.positive_h, self.positive_t, self.positive_r]
+			return [self.positive_h, self.positive_t, self.positive_r, self.positive_type_r]
 		else:
 			return [self.batch_h[0:self.config.batch_size], \
 			self.batch_t[0:self.config.batch_size], \
@@ -17,7 +17,7 @@ class Model(object):
 
 	def get_negative_instance(self, in_batch = True):
 		if in_batch:
-			return [self.negative_h, self.negative_t, self.negative_r]
+			return [self.negative_h, self.negative_t, self.negative_r, self.negative_type_r]
 		else:
 			return [self.batch_h[self.config.batch_size:self.config.batch_seq_size],\
 			self.batch_t[self.config.batch_size:self.config.batch_seq_size],\
@@ -58,16 +58,20 @@ class Model(object):
 		self.batch_t = tf.placeholder(tf.int64, [config.batch_seq_size])
 		self.batch_r = tf.placeholder(tf.int64, [config.batch_seq_size])
 		self.batch_y = tf.placeholder(tf.float32, [config.batch_seq_size])
+		self.batch_type_r = tf.placeholder(tf.int64, [config.batch_seq_size])
 
 		self.positive_h = tf.transpose(tf.reshape(self.batch_h[0:config.batch_size], [1, -1]), perm = [1, 0])
 		self.positive_t = tf.transpose(tf.reshape(self.batch_t[0:config.batch_size], [1, -1]), perm = [1, 0])
 		self.positive_r = tf.transpose(tf.reshape(self.batch_r[0:config.batch_size], [1, -1]), perm = [1, 0])
+		self.positive_type_r = tf.transpose(tf.reshape(self.batch_type_r[0:config.batch_size], [1, -1]), perm = [1, 0])
 		self.positive_y = tf.transpose(tf.reshape(self.batch_y[0:config.batch_size], [1, -1]), perm = [1, 0])
+
 		self.negative_h = tf.transpose(tf.reshape(self.batch_h[config.batch_size:config.batch_seq_size], [config.negative_ent + config.negative_rel, -1]), perm = [1, 0])
 		self.negative_t = tf.transpose(tf.reshape(self.batch_t[config.batch_size:config.batch_seq_size], [config.negative_ent + config.negative_rel, -1]), perm = [1, 0])
 		self.negative_r = tf.transpose(tf.reshape(self.batch_r[config.batch_size:config.batch_seq_size], [config.negative_ent + config.negative_rel, -1]), perm = [1, 0])
+		self.negative_type_r = tf.transpose(tf.reshape(self.batch_type_r[config.batch_size:config.batch_seq_size], [config.negative_ent + config.negative_rel, -1]), perm = [1, 0])
 		self.negative_y = tf.transpose(tf.reshape(self.batch_y[config.batch_size:config.batch_seq_size], [config.negative_ent + config.negative_rel, -1]), perm = [1, 0])
-		
+
 		self.predict_h = tf.placeholder(tf.int64, [None])
 		self.predict_t = tf.placeholder(tf.int64, [None])
 		self.predict_r = tf.placeholder(tf.int64, [None])
@@ -84,6 +88,18 @@ class Model(object):
 
 	def __init__(self, config):
 		self.config = config
+		"""
+		self._n_score = None
+		self.n_score = None
+		self._p_score = None
+		self.p_score = None
+		self.p_h = None
+		self.p_t = None
+		self.p_r = None
+		self.n_h = None
+		self.n_t = None
+		self.n_r = None
+		"""
 
 		with tf.name_scope("input"):
 			self.input_def()

@@ -1,0 +1,19 @@
+18
+Drama	0
+Comedy	1
+Action	2
+Thriller	3
+Romance	4
+Horror	5
+Adventure	6
+Sci-Fi	7
+Children's	8
+Crime	9
+War	10
+Documentary	11
+Musical	12
+Mystery	13
+Animation	14
+Fantasy	15
+Western	16
+Film-Noir	17

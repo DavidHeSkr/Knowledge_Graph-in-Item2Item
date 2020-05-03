@@ -66,12 +66,14 @@ void importTrainFiles() {
 	trainRel = (Triple *)calloc(trainTotal, sizeof(Triple));
 	freqRel = (INT *)calloc(relationTotal, sizeof(INT));
 	freqEnt = (INT *)calloc(entityTotal, sizeof(INT));
+	//read in all the train_data into trainList
 	for (INT i = 0; i < trainTotal; i++) {
 		tmp = fscanf(fin, "%ld", &trainList[i].h);
 		tmp = fscanf(fin, "%ld", &trainList[i].t);
 		tmp = fscanf(fin, "%ld", &trainList[i].r);
 	}
 	fclose(fin);
+	// sort the trainList by the h/r/l/
 	std::sort(trainList, trainList + trainTotal, Triple::cmp_head);
 	tmp = trainTotal;
 	trainTotal = 1;
@@ -114,10 +116,12 @@ void importTrainFiles() {
 			rigHead[trainHead[i - 1].h] = i - 1;
 			lefHead[trainHead[i].h] = i;
 		}
+
 		if (trainRel[i].h != trainRel[i - 1].h) {
 			rigRel[trainRel[i - 1].h] = i - 1;
 			lefRel[trainRel[i].h] = i;
 		}
+
 	}
 	lefHead[trainHead[0].h] = 0;
 	rigHead[trainHead[trainTotal - 1].h] = trainTotal - 1;
